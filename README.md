@@ -1,6 +1,7 @@
 # SymbolicLink 原理
 
-使用C++调用[CreateSymbolicLink](https://learn.microsoft.com/zh-cn/windows/win32/fileio/creating-symbolic-links?redirectedfrom=MSDN)实现文件/文件夹的移动和快捷方式映射
+使用C++调用[CreateSymbolicLink](https://learn.microsoft.com/zh-cn/windows/win32/fileio/creating-symbolic-links?redirectedfrom=MSDN)实现文件/文件夹的移动和快捷方式映射  
+和FolderMove类似的功能，因为FolderMove没有开源所以……现在你可以修改源码来添加自己需要的功能
 
 ---
 
