@@ -120,21 +120,27 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 // 检查文件是否被占用
 bool IsFileInUse(const std::filesystem::path& filePath) {
+	// OutputDebugString(filePath.c_str());
 	HANDLE hFile = CreateFile(
 		filePath.c_str(),
-		GENERIC_READ,
-		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		GENERIC_READ | GENERIC_WRITE,
+		NULL,
+		// FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 		NULL,
 		OPEN_EXISTING,
 		FILE_ATTRIBUTE_NORMAL,
 		NULL);
 
 	if (hFile == INVALID_HANDLE_VALUE) {
+
 		return true;
 		/*	if (GetLastError() == ERROR_SHARING_VIOLATION) {
 			}*/
 	}
-
+	//OutputDebugString(L"\n 被检查文件");
+	//OutputDebugString(filePath.c_str());
+	//OutputDebugString(L"\n 句柄 ");
+	//OutputDebugString(std::to_wstring((int)hFile).c_str());
 	CloseHandle(hFile);
 	return false;
 }
@@ -155,25 +161,31 @@ bool GetPathsState(const std::filesystem::path& srcDir) {
 	// 计算文件和文件夹总数，并同时检查文件和文件夹是否被占用或无权限
 	for (const auto& entry : std::filesystem::recursive_directory_iterator(srcDir)) {
 		const auto& path = entry.path();
-		// 检查权限
-		if (!HasAccessPermission(path)) {
-			errorMessages.push_back(L"无访问权限: " + path.wstring());
-			continue;
-		}
-		// 如果是文件需要额外检查是否占用
+
+		//// 检查权限
+		//if (!HasAccessPermission(path)) {
+		//	errorMessages.push_back(L"无访问权限: " + path.wstring());
+		//	continue;
+		//}
+
+		// 如果是文件 并且 被占用 则 添加到错误列表
 		if (entry.is_regular_file() && IsFileInUse(path))
 		{
-			errorMessages.push_back(L"文件被占用: " + path.wstring());
+			// OutputDebugString(path.wstring().c_str());
+			//OutputDebugString(L"\n 被占用文件");
+			//OutputDebugString(path.wstring().c_str());
+			// errorMessages.push_back(L"文件被占用: " + path.wstring());
+			errorMessages.push_back(path.wstring());
 			continue;
 		}
 	}
 	// 如果有错误信息，统一显示
 	if (!errorMessages.empty()) {
-		std::wstring errorMessage = L"以下文件无法处理:\n";
+		std::wstring errorMessage;// = L"以下文件无法处理:\n";
 		for (const auto& msg : errorMessages) {
 			errorMessage += msg + L"\n";
 		}
-		MessageBox(MhWnd, errorMessage.c_str(), L"错误", MB_OK | MB_ICONERROR);
+		MessageBox(MhWnd, errorMessage.c_str(), L"以下文件无法处理", MB_OK | MB_ICONERROR);
 		return false;
 	}
 	return true;
@@ -355,13 +367,26 @@ static void InitControls(HWND hWnd) {
 
 // 规范化路径
 std::wstring NormalizePath(const std::wstring& wpath) {
+	if (wpath.empty())
+	{
+		return L"";
+	}
+	std::wstring pathStr = wpath;
+	if (pathStr.back() == L'\\')
+	{
+		pathStr = pathStr.substr(0, pathStr.length() - 1);
+	}
+
 	// 将 std::wstring 转换为 std::filesystem::path
-	std::filesystem::path path(wpath);
+	std::filesystem::path path(pathStr);
 
 	// 使用 absolute 函数返回规范化后的绝对路径
 	std::filesystem::path normalizedPath = std::filesystem::absolute(path);
-	//OutputDebugString(L"\n normalizedPath: ");
-	//OutputDebugString(normalizedPath.c_str());
+
+	OutputDebugString(L"\n normalizedPath: ");
+	OutputDebugString(normalizedPath.c_str());
+
+	// 如果路径没有有效的文件名部分，返回空
 	if (normalizedPath.has_root_name() && normalizedPath.filename().empty())
 	{
 		return L"";
@@ -669,9 +694,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					break;
 				}
 			}
-			fullMsg = L"是否需要对:\n" + sourcePath + L"\n中的文件&文件夹进行占用&权限检查\n这样做会降低移动效率";
+			fullMsg = L"是否需要对:\n" + sourcePath + L"\n中的文件&文件夹进行占用&权限检查\n这样做会根据文件数量增加耗时";
 			msgboxRes = MessageBox(MhWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
-			if (msgboxRes != IDYES)
+			if (msgboxRes == IDYES)
 			{
 				if (!GetPathsState(sourcePath))
 				{
