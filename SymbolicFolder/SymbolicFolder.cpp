@@ -3,6 +3,7 @@
 
 #include "framework.h"
 #include "SymbolicFolder.h"
+#include <regex>
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例				
@@ -365,38 +366,67 @@ static void InitControls(HWND hWnd) {
 	// SendMessage(hProgressBar, PBM_SETPOS, 50, 0); // 更新进度条
 }
 
+// 判断是否符合Windows路径的格式
+static bool isValidWindowsPath(const std::wstring& path) {
+	// 正则表达式匹配Windows路径
+	std::wregex pathRegex(LR"(^[a-zA-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*$)");
+	//正则表达式 三部分组成：
+	// ^[a-zA-Z]:\\
+	// 路径以驱动器字母（A-Z，不区分大小写）开头，后跟冒号和反斜杠。
+
+	// (?:[^\\/:*?"<>|\r\n]+\\)*
+	// 路径中可以包含多个文件夹名称，每个文件夹名称由非特殊字符组成，后跟反斜杠。
+
+	// [^\\/:*?"<>|\r\n]*$
+	// 路径的最后一个部分可以是文件夹或文件名，不包含特殊字符。
+
+	// 检查路径是否匹配正则表达式
+	return std::regex_match(path, pathRegex);
+}
+
 // 规范化路径
-std::wstring NormalizePath(const std::wstring& wpath) {
-	if (wpath.empty())
+static std::wstring NormalizePath(const std::wstring& wpath) {
+	// 规范化路径：将所有的 '/' 替换为 '\'
+	// std::replace(wpath.begin(), wpath.end(), L'/', L'\\');
+	if (wpath.empty() || !isValidWindowsPath(wpath))
 	{
 		return L"";
 	}
 	std::wstring pathStr = wpath;
+	// 移除尾部 '\' 反斜杠
 	if (pathStr.back() == L'\\')
 	{
 		pathStr = pathStr.substr(0, pathStr.length() - 1);
 	}
-
+	return pathStr;
 	// 将 std::wstring 转换为 std::filesystem::path
 	std::filesystem::path path(pathStr);
 
-	// 使用 absolute 函数返回规范化后的绝对路径
-	std::filesystem::path normalizedPath = std::filesystem::absolute(path);
-
-	OutputDebugString(L"\n normalizedPath: ");
-	OutputDebugString(normalizedPath.c_str());
-
 	// 如果路径没有有效的文件名部分，返回空
-	if (normalizedPath.has_root_name() && normalizedPath.filename().empty())
+	// 确保路径有盘符 && 确保不是根目录
+	if (path.has_root_name() && path.filename().empty())
 	{
 		return L"";
 	}
-	// 将规范化的路径转换回 std::wstring
-	return normalizedPath.wstring();
+
+	return path.wstring();
+	//// 使用 absolute 函数返回规范化后的绝对路径
+	//std::filesystem::path normalizedPath = std::filesystem::absolute(path);
+
+	//OutputDebugString(L"\n normalizedPath: ");
+	//OutputDebugString(normalizedPath.c_str());
+
+	//// 如果路径没有有效的文件名部分，返回空
+	//if (normalizedPath.has_root_name() && normalizedPath.filename().empty())
+	//{
+	//	return L"";
+	//}
+	//// 将规范化的路径转换回 std::wstring
+	//return normalizedPath.wstring();
 }
 
 // 获取编辑框中的文本
-std::wstring GetEditText(HWND hwndEdit) {
+static std::wstring GetEditText(HWND hwndEdit) {
 	// 获取编辑框中的文本长度
 	int length = GetWindowTextLength(hwndEdit);
 	if (length == 0) {
@@ -490,10 +520,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			//OutputDebugString(sourcePath.c_str());
 			//OutputDebugString(L"\n targetPath: ");
 			//OutputDebugString(targetPath.c_str());
+			//OutputDebugString(L"\n");
 
-			if (sourcePath.empty() || targetPath.empty() || sourcePath == targetPath)
+			if (sourcePath.empty() || targetPath.empty())
 			{
-				MessageBox(hWnd, L"确保来源目录和目标目录都已填写，且不是相同的路径或根目录。", L"目录错误", MB_OK | MB_ICONERROR);
+				MessageBox(hWnd, L"确保来源目录和目标目录都已填写", L"目录错误", MB_OK | MB_ICONERROR);
+				break;
+			}
+			if (sourcePath == targetPath)
+			{
+				MessageBox(hWnd, L"来源目录和目标目录是相同的路径。", L"目录错误", MB_OK | MB_ICONERROR);
 				break;
 			}
 			int msgboxRes;
@@ -543,13 +579,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 			// 如果勾选了目录补全选项
 			if (IsDlgButtonChecked(hWnd, IDC_CHECKBOX_PATH_RECTIFY) == BST_CHECKED) {
-				// 获取 sourcePath 的长度
+				// 获取来源目录 sourcePath 的长度
 				size_t sourceLen = sourcePath.size();
 				// 如果 sourcePath 以 '\\' 结尾，移除最后的 '\\'
 				if (sourcePath[sourceLen - 1] == L'\\') {
 					sourcePath.pop_back();  // 移除最后的 '\\'
 				}
-				// 获取 targetPath 的长度
+				// 获取目标目录 targetPath 的长度
 				size_t targetLen = targetPath.size();
 				// 如果 targetPath 不以 '\\' 结尾，添加 '\\'
 				if (targetPath[targetLen - 1] != L'\\') {
@@ -565,11 +601,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				// 拼接最终的 sourcePath 部分到 targetPath
 				targetPath.append(finalSource);
 			}
+			//OutputDebugString(L"拼接后的最终targetPath: ");
+			//OutputDebugString(targetPath.c_str());
+			//OutputDebugString(L"\n");
 			// 目标目录检查 必须要存在
 			if (!std::filesystem::exists(targetPath))
 			{
 				fullMsg = L"目标目录\n" + targetPath + L"\n不存在，是否创建？";
-				// MessageBox(hWnd, L"目标目录不存在", L"错误", MB_OK | MB_ICONERROR);
 				msgboxRes = MessageBox(hWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
 				if (msgboxRes == IDYES) {
 					try {
@@ -593,8 +631,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				break;
 			}
 			fullMsg = L"接下来所有访问:\n" + sourcePath + L"\n目录的文件都会被重定向到: \n" + targetPath + L"\n是否继续";
-			//OutputDebugString(L"重定向提示文本：\n");
-			//OutputDebugString(fullMsg.c_str());
 			msgboxRes = MessageBox(MhWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
 			if (msgboxRes != IDYES)
 			{
@@ -625,6 +661,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			std::wstring sourcePath = NormalizePath(GetEditText(hEdit[0]));
 			std::wstring targetPath = NormalizePath(GetEditText(hEdit[1]));
+
+			//OutputDebugString(L"\n sourcePath ");
+			//OutputDebugString(sourcePath.c_str());
+			//OutputDebugString(L"\n targetPath ");
+			//OutputDebugString(targetPath.c_str());
+			//OutputDebugString(L"\n");
 
 			if (sourcePath.empty() || targetPath.empty() || sourcePath == targetPath)
 			{
@@ -661,6 +703,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				//	finalTargetPath += L'\\';
 				//}
 			}
+			OutputDebugString(L"拼接后的最终targetPath: ");
+			OutputDebugString(finalTargetPath.c_str());
+			OutputDebugString(L"\n");
 			// 来源目录检查
 			if (std::filesystem::exists(sourcePath))
 			{
@@ -686,18 +731,46 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			// 目标目录检查
 			if (std::filesystem::exists(finalTargetPath)) {
 				fullMsg = L"目标目录: \n" + finalTargetPath + L"\n已有同名文件夹，移动时文件会被覆盖或移动失败，是否继续？";
-				//WCHAR fullMsg[1024];
-				//wsprintf(fullMsg, L"目标目录:\n%ls\n已有同名文件夹，移动时文件会被覆盖或移动失败，是否继续？", targetPath);
 				msgboxRes = MessageBox(hWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
 				if (msgboxRes != IDYES)
 				{
 					break;
 				}
 			}
-			fullMsg = L"是否需要对:\n" + sourcePath + L"\n中的文件&文件夹进行占用&权限检查\n这样做会根据文件数量增加耗时";
+			else
+			{
+				fullMsg = L"目标目录\n" + finalTargetPath + L"\n不存在，是否创建？";
+				// MessageBox(hWnd, L"目标目录不存在", L"错误", MB_OK | MB_ICONERROR);
+				msgboxRes = MessageBox(hWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
+				if (msgboxRes == IDYES) {
+					try {
+						std::filesystem::create_directory(finalTargetPath); // 创建目标目录
+					}
+					catch (const std::filesystem::filesystem_error& e) {
+						std::string errorMsg = e.what();
+						std::wstring wideErrorMsg(errorMsg.begin(), errorMsg.end());
+						MessageBox(hWnd, wideErrorMsg.c_str(), L"错误", MB_OK | MB_ICONERROR);
+						break;
+					}
+				}
+				else {
+					break;
+				}
+			}
+			fullMsg = L"是否需要对:\n" + sourcePath + L"\n中的文件&文件夹进行占用&权限检查\n这样做会根据文件数量增加耗时！";
 			msgboxRes = MessageBox(MhWnd, fullMsg.c_str(), L"提示", MB_YESNO | MB_ICONQUESTION);
 			if (msgboxRes == IDYES)
 			{
+				if (!HasAccessPermission(sourcePath))
+				{
+					MessageBox(hWnd, L"来源目录没有访问权限", L"错误", MB_OK | MB_ICONQUESTION);
+					break;
+				}
+				if (!HasAccessPermission(finalTargetPath))
+				{
+					MessageBox(hWnd, L"目标目录没有访问权限", L"错误", MB_OK | MB_ICONQUESTION);
+					break;
+				}
 				if (!GetPathsState(sourcePath))
 				{
 					break;
